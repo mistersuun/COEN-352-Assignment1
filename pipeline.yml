@@ -23,7 +23,7 @@ resources:
   - name: docker-registry
     type: docker-image
     source:
-      repository: {{docker_registry}}/{{project_name}}
+      repository: "{{docker_registry}}/{{project_name}}"
       tag: latest
       username: {{docker_username}}
       password: {{docker_password}}
@@ -127,7 +127,7 @@ jobs:
           params:
             SONAR_HOST_URL: {{sonarqube_url}}
             SONAR_TOKEN: {{sonarqube_token}}
-            SONAR_PROJECT_KEY: {{project_name}}-dev
+            SONAR_PROJECT_KEY: "{{project_name}}-dev"
             SONAR_PROJECT_NAME: "{{project_name}} Development"
           run:
             path: bash
@@ -275,7 +275,7 @@ jobs:
           params:
             SONAR_HOST_URL: {{sonarqube_url}}
             SONAR_TOKEN: {{sonarqube_token}}
-            SONAR_PROJECT_KEY: {{project_name}}-staging
+            SONAR_PROJECT_KEY: "{{project_name}}-staging"
             SONAR_PROJECT_NAME: "{{project_name}} Staging"
           run:
             path: bash
@@ -412,7 +412,7 @@ jobs:
           params:
             SONAR_HOST_URL: {{sonarqube_url}}
             SONAR_TOKEN: {{sonarqube_token}}
-            SONAR_PROJECT_KEY: {{project_name}}-prod
+            SONAR_PROJECT_KEY: "{{project_name}}-prod"
             SONAR_PROJECT_NAME: "{{project_name}} Production"
           run:
             path: bash
