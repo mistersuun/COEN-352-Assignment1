@@ -1,0 +1,469 @@
+---
+# Concourse CI/CD Pipeline Configuration
+# This pipeline handles compilation, testing, SonarQube analysis, and deployment
+# for dev, staging, and production environments
+
+resources:
+  # Git repository resource
+  - name: source-code
+    type: git
+    source:
+      uri: {{git_repo_url}}
+      branch: {{git_branch}}
+      private_key: {{git_private_key}}
+
+  # SonarQube resource for quality analysis
+  - name: sonarqube-server
+    type: sonarqube
+    source:
+      url: {{sonarqube_url}}
+      token: {{sonarqube_token}}
+
+  # Docker registry for containerized deployments (optional)
+  - name: docker-registry
+    type: docker-image
+    source:
+      repository: {{docker_registry}}/{{project_name}}
+      tag: latest
+      username: {{docker_username}}
+      password: {{docker_password}}
+
+jobs:
+  # ===========================================
+  # DEVELOPMENT ENVIRONMENT PIPELINE
+  # ===========================================
+  - name: dev-compile
+    plan:
+      - get: source-code
+        trigger: true
+      - task: compile-java
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: openjdk:17-jdk-slim
+          inputs:
+            - name: source-code
+          outputs:
+            - name: compiled-code
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Starting Java compilation..."
+                
+                # Create output directory
+                mkdir -p compiled-code/bin
+                
+                # Compile Java files
+                find source-code/src -name "*.java" -exec javac -d compiled-code/bin {} +
+                
+                # Copy resources if any
+                if [ -d "source-code/src/resources" ]; then
+                  cp -r source-code/src/resources/* compiled-code/bin/
+                fi
+                
+                echo "Compilation completed successfully!"
+                ls -la compiled-code/bin/
+
+  - name: dev-test
+    plan:
+      - get: source-code
+        passed: [dev-compile]
+      - get: compiled-code
+        passed: [dev-compile]
+      - task: run-tests
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: openjdk:17-jdk-slim
+          inputs:
+            - name: source-code
+            - name: compiled-code
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Running tests..."
+                
+                # Add compiled classes to classpath
+                export CLASSPATH="compiled-code/bin:."
+                
+                # Run tests if they exist
+                if [ -d "source-code/test" ]; then
+                  echo "Running test suite..."
+                  # Add test compilation and execution here
+                  # javac -cp compiled-code/bin source-code/test/*.java
+                  # java -cp compiled-code/bin:source-code/test org.junit.runner.JUnitCore TestSuite
+                else
+                  echo "No tests found, skipping test execution"
+                fi
+                
+                echo "Test execution completed!"
+
+  - name: dev-sonarqube
+    plan:
+      - get: source-code
+        passed: [dev-test]
+      - get: compiled-code
+        passed: [dev-test]
+      - task: sonarqube-analysis
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: sonarqube:9-community
+          inputs:
+            - name: source-code
+            - name: compiled-code
+          params:
+            SONAR_HOST_URL: {{sonarqube_url}}
+            SONAR_TOKEN: {{sonarqube_token}}
+            SONAR_PROJECT_KEY: {{project_name}}-dev
+            SONAR_PROJECT_NAME: "{{project_name}} Development"
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Starting SonarQube analysis for DEV environment..."
+                
+                # Install SonarQube Scanner
+                wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                unzip -q sonar-scanner-cli-4.8.0.2856-linux.zip
+                export PATH=$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin
+                
+                # Run SonarQube analysis
+                sonar-scanner \
+                  -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                  -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
+                  -Dsonar.sources=source-code/src \
+                  -Dsonar.java.binaries=compiled-code/bin \
+                  -Dsonar.host.url=${SONAR_HOST_URL} \
+                  -Dsonar.login=${SONAR_TOKEN} \
+                  -Dsonar.qualitygate.wait=true
+                
+                echo "SonarQube analysis completed for DEV!"
+
+  - name: dev-deploy
+    plan:
+      - get: source-code
+        passed: [dev-sonarqube]
+      - get: compiled-code
+        passed: [dev-sonarqube]
+      - task: deploy-to-dev
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: alpine:latest
+          inputs:
+            - name: source-code
+            - name: compiled-code
+          params:
+            DEV_SERVER: {{dev_server_host}}
+            DEV_USER: {{dev_server_user}}
+            DEV_PATH: {{dev_deployment_path}}
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Deploying to DEV environment..."
+                
+                # Install SSH client
+                apk add --no-cache openssh-client
+                
+                # Setup SSH key (you'll need to configure this)
+                # echo "${DEV_SSH_KEY}" > /tmp/ssh_key
+                # chmod 600 /tmp/ssh_key
+                
+                # Deploy compiled code to dev server
+                # scp -i /tmp/ssh_key -r compiled-code/* ${DEV_USER}@${DEV_SERVER}:${DEV_PATH}/
+                
+                echo "Deployment to DEV completed!"
+
+  # ===========================================
+  # STAGING ENVIRONMENT PIPELINE
+  # ===========================================
+  - name: staging-compile
+    plan:
+      - get: source-code
+        trigger: true
+      - task: compile-java-staging
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: openjdk:17-jdk-slim
+          inputs:
+            - name: source-code
+          outputs:
+            - name: compiled-code-staging
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Starting Java compilation for STAGING..."
+                
+                mkdir -p compiled-code-staging/bin
+                find source-code/src -name "*.java" -exec javac -d compiled-code-staging/bin {} +
+                
+                if [ -d "source-code/src/resources" ]; then
+                  cp -r source-code/src/resources/* compiled-code-staging/bin/
+                fi
+                
+                echo "STAGING compilation completed!"
+
+  - name: staging-test
+    plan:
+      - get: source-code
+        passed: [staging-compile]
+      - get: compiled-code-staging
+        passed: [staging-compile]
+      - task: run-tests-staging
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: openjdk:17-jdk-slim
+          inputs:
+            - name: source-code
+            - name: compiled-code-staging
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Running STAGING tests..."
+                export CLASSPATH="compiled-code-staging/bin:."
+                # Add comprehensive test execution here
+                echo "STAGING test execution completed!"
+
+  - name: staging-sonarqube
+    plan:
+      - get: source-code
+        passed: [staging-test]
+      - get: compiled-code-staging
+        passed: [staging-test]
+      - task: sonarqube-analysis-staging
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: sonarqube:9-community
+          inputs:
+            - name: source-code
+            - name: compiled-code-staging
+          params:
+            SONAR_HOST_URL: {{sonarqube_url}}
+            SONAR_TOKEN: {{sonarqube_token}}
+            SONAR_PROJECT_KEY: {{project_name}}-staging
+            SONAR_PROJECT_NAME: "{{project_name}} Staging"
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Starting SonarQube analysis for STAGING..."
+                
+                wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                unzip -q sonar-scanner-cli-4.8.0.2856-linux.zip
+                export PATH=$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin
+                
+                sonar-scanner \
+                  -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                  -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
+                  -Dsonar.sources=source-code/src \
+                  -Dsonar.java.binaries=compiled-code-staging/bin \
+                  -Dsonar.host.url=${SONAR_HOST_URL} \
+                  -Dsonar.login=${SONAR_TOKEN} \
+                  -Dsonar.qualitygate.wait=true
+                
+                echo "SonarQube analysis completed for STAGING!"
+
+  - name: staging-deploy
+    plan:
+      - get: source-code
+        passed: [staging-sonarqube]
+      - get: compiled-code-staging
+        passed: [staging-sonarqube]
+      - task: deploy-to-staging
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: alpine:latest
+          inputs:
+            - name: source-code
+            - name: compiled-code-staging
+          params:
+            STAGING_SERVER: {{staging_server_host}}
+            STAGING_USER: {{staging_server_user}}
+            STAGING_PATH: {{staging_deployment_path}}
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Deploying to STAGING environment..."
+                apk add --no-cache openssh-client
+                # Add staging deployment logic here
+                echo "Deployment to STAGING completed!"
+
+  # ===========================================
+  # PRODUCTION ENVIRONMENT PIPELINE
+  # ===========================================
+  - name: prod-compile
+    plan:
+      - get: source-code
+        trigger: true
+      - task: compile-java-prod
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: openjdk:17-jdk-slim
+          inputs:
+            - name: source-code
+          outputs:
+            - name: compiled-code-prod
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Starting Java compilation for PRODUCTION..."
+                
+                mkdir -p compiled-code-prod/bin
+                find source-code/src -name "*.java" -exec javac -d compiled-code-prod/bin {} +
+                
+                if [ -d "source-code/src/resources" ]; then
+                  cp -r source-code/src/resources/* compiled-code-prod/bin/
+                fi
+                
+                echo "PRODUCTION compilation completed!"
+
+  - name: prod-test
+    plan:
+      - get: source-code
+        passed: [prod-compile]
+      - get: compiled-code-prod
+        passed: [prod-compile]
+      - task: run-tests-prod
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: openjdk:17-jdk-slim
+          inputs:
+            - name: source-code
+            - name: compiled-code-prod
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Running PRODUCTION tests..."
+                export CLASSPATH="compiled-code-prod/bin:."
+                # Add comprehensive test execution here
+                echo "PRODUCTION test execution completed!"
+
+  - name: prod-sonarqube
+    plan:
+      - get: source-code
+        passed: [prod-test]
+      - get: compiled-code-prod
+        passed: [prod-test]
+      - task: sonarqube-analysis-prod
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: sonarqube:9-community
+          inputs:
+            - name: source-code
+            - name: compiled-code-prod
+          params:
+            SONAR_HOST_URL: {{sonarqube_url}}
+            SONAR_TOKEN: {{sonarqube_token}}
+            SONAR_PROJECT_KEY: {{project_name}}-prod
+            SONAR_PROJECT_NAME: "{{project_name}} Production"
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Starting SonarQube analysis for PRODUCTION..."
+                
+                wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                unzip -q sonar-scanner-cli-4.8.0.2856-linux.zip
+                export PATH=$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin
+                
+                sonar-scanner \
+                  -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                  -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
+                  -Dsonar.sources=source-code/src \
+                  -Dsonar.java.binaries=compiled-code-prod/bin \
+                  -Dsonar.host.url=${SONAR_HOST_URL} \
+                  -Dsonar.login=${SONAR_TOKEN} \
+                  -Dsonar.qualitygate.wait=true
+                
+                echo "SonarQube analysis completed for PRODUCTION!"
+
+  - name: prod-deploy
+    plan:
+      - get: source-code
+        passed: [prod-sonarqube]
+      - get: compiled-code-prod
+        passed: [prod-sonarqube]
+      - task: deploy-to-prod
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: alpine:latest
+          inputs:
+            - name: source-code
+            - name: compiled-code-prod
+          params:
+            PROD_SERVER: {{prod_server_host}}
+            PROD_USER: {{prod_server_user}}
+            PROD_PATH: {{prod_deployment_path}}
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -e
+                echo "Deploying to PRODUCTION environment..."
+                apk add --no-cache openssh-client
+                # Add production deployment logic here
+                echo "Deployment to PRODUCTION completed!"

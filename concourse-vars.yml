@@ -1,0 +1,38 @@
+---
+# Concourse Pipeline Variables Configuration
+# Replace these values with your actual configuration
+
+# Git Repository Configuration
+git_repo_url: "https://github.com/your-username/COEN-352-Assignment1.git"
+git_branch: "main"
+git_private_key: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  # Your SSH private key here
+  -----END OPENSSH PRIVATE KEY-----
+
+# Project Configuration
+project_name: "coen-352-assignment1"
+
+# SonarQube Configuration
+sonarqube_url: "https://sonarqube.your-domain.com"
+sonarqube_token: "your-sonarqube-token-here"
+
+# Docker Registry Configuration (Optional)
+docker_registry: "your-registry.com"
+docker_username: "your-docker-username"
+docker_password: "your-docker-password"
+
+# Development Environment
+dev_server_host: "dev.your-domain.com"
+dev_server_user: "deploy"
+dev_deployment_path: "/opt/apps/dev"
+
+# Staging Environment
+staging_server_host: "staging.your-domain.com"
+staging_server_user: "deploy"
+staging_deployment_path: "/opt/apps/staging"
+
+# Production Environment
+prod_server_host: "prod.your-domain.com"
+prod_server_user: "deploy"
+prod_deployment_path: "/opt/apps/prod"
